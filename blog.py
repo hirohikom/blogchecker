@@ -143,10 +143,23 @@ def fetch_blog_summary(href, api_key):
             
         detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
         
-        # 本文エリアをピンポイントで取得 (ノイズ除去)
-        body_area = detail_soup.find('div', class_='txt')
-        if not body_area:
-            body_area = detail_soup.find('main', class_='content-main')
+        # 本文エリアの探索候補を優先順位順に定義
+        candidate_selectors = [
+            {'name': 'div', 'class_': 'txt'},                # 第1候補: 大本命（純粋なテキストエリア）
+            {'name': 'section', 'class_': 'section-detail'}, # 第2候補: 1つ外側の記事コンテナ
+            {'name': 'article', 'class_': None},             # 第3候補: 一般的なarticleタグ
+            {'name': 'main', 'class_': 'content-main'},      # 第4候補: 最終手段（ページ全体のメインコンテンツ）
+        ]
+        
+        body_area = None
+        for selector in candidate_selectors:
+            if selector['class_']:
+                body_area = detail_soup.find(selector['name'], class_=selector['class_'])
+            else:
+                body_area = detail_soup.find(selector['name'])
+            
+            if body_area:
+                break # 見つかったらそこで探索終了
             
         if body_area:
             # 絶対に不要なタグだけ安全に除外
