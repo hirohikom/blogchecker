@@ -12,8 +12,17 @@ from openai import OpenAI
 st.title("☁️ 僕青 ブログ更新チェッカー (モバイル対応版)")
 st.caption("昨日〜今日にかけて更新されたブログを抽出し、GPT-4o-miniで要約します。")
 
-# ローカル用にデフォルト値を設定
-APP_PASSWORD = st.secrets.get("APP_PASSWORD") or ["mysecret117"]
+# --- メンバーリスト（絞り込み用） ---
+ALL_MEMBERS = [
+    "青木宙帆", "秋田莉杏", "安納蒼衣", "伊藤ゆず", "今井優希", 
+    "岩本理瑚", "金澤亜美", "木下藍", "工藤唯愛", "塩釜菜那", 
+    "杉浦英恋", "須永心海", "西森杏弥", "萩原心花", "長谷川稀未",
+    "早﨑すずき", "宮腰友里亜", "八重樫美伊咲", "八木仁愛", "柳堀花怜", 
+    "吉本此那",
+]
+
+# --- 認証処理 ---
+APP_PASSWORD = st.secrets.get("APP_PASSWORD") or ["mysecret123"]
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -26,7 +35,6 @@ if not st.session_state.authenticated:
     elif user_pass:
         st.error("❌ パスワードが正しくありません。")
     st.info("🔓 正しいパスワードを入力するとチェッカーが起動します。")
-
 
 # --- 1. ブログの「リスト」だけを取得してキャッシュする関数 ---
 @st.cache_data(ttl=None)
@@ -120,58 +128,65 @@ def fetch_blog_summary(href, api_key):
     summary_text = "本文の取得に失敗しました。"
     is_error = False
     
+    # WAF対策: 個別ページへのアクセス前に必ず1秒待機し、人間らしさを装う
+    time.sleep(1.0)
+    
     try:
         detail_res = requests.get(href, headers=headers, timeout=10)
-        if detail_res.status_code == 200:
-            detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
-            # 1. まず大本命の本文エリア（div class="txt"）をピンポイントで狙う
-            body_area = detail_soup.find('div', class_='txt')
+        
+        # HTTPエラー（403など）で弾かれた場合
+        if detail_res.status_code != 200:
+            return {
+                "summary_text": f"アクセスが弾かれました (HTTP {detail_res.status_code})。連続アクセス制限の可能性があります。", 
+                "is_error": True
+            }
             
-            # 2. 万が一サイト構造が変わっていた時の保険として content-main を探す
-            if not body_area:
-                body_area = detail_soup.find('main', class_='content-main')
+        detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
+        
+        # 本文エリアをピンポイントで取得 (ノイズ除去)
+        body_area = detail_soup.find('div', class_='txt')
+        if not body_area:
+            body_area = detail_soup.find('main', class_='content-main')
             
-            if body_area:
-                # 念のため、JS無効警告などメンバーが絶対に書かないタグだけ除外
-                for element in body_area(["script", "style", "noscript"]):
-                    element.decompose()
+        if body_area:
+            # 絶対に不要なタグだけ安全に除外
+            for element in body_area(["script", "style", "noscript"]):
+                element.decompose()
+            
+            raw_text = body_area.get_text(separator=" ")
+            clean_text = re.sub(r'\s+', ' ', raw_text).strip()
+            
+            if client and len(clean_text) > 50:
+                prompt = (
+                    f"以下のアイドルブログの本文を読み、魅力を損なわない形で、3～5文程度の箇条書きで要約してください。\n\n"
+                    f"【ルール】\n"
+                    f"1. 語尾は必ず敬体（「〜ます」「〜です」など）で統一してください。\n"
+                    f"2. 誰のブログかは既に明らかなため、最初の一文の冒頭に「〇〇（メンバー名）は〜」という主語は書かないでください。\n"
+                    f"3. 「～します」というような主体者視点の表現ではなく、「～しています」というような客観視点の表現にしてください。\n\n"
+                    f"【本文】\n{clean_text}"
+                )
                 
-                raw_text = body_area.get_text(separator=" ")
-                clean_text = re.sub(r'\s+', ' ', raw_text).strip()
-                
-                if client and len(clean_text) > 50:
-                    prompt = (
-                        f"以下のアイドルブログの本文を読み、魅力を損なわない形で、3～5文程度の箇条書きで要約してください。\n\n"
-                        f"【ルール】\n"
-                        f"1. 語尾は必ず敬体（「〜ます」「〜です」など）で統一してください。\n"
-                        f"2. 誰のブログかは既に明らかなため、最初の一文の冒頭に「〇〇（メンバー名）は〜」という主語は書かないでください。\n"
-                        f"3. 「～します」というような主体者視点の表現ではなく、「～しています」というような客観視点の表現にしてください。\n\n"
-                        f"【本文】\n{clean_text}"
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "あなたは優秀なアシスタントです。"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        timeout=15
                     )
-                    
-                    # APIのレートリミット対策
-                    time.sleep(0.5)
-                    
-                    try:
-                        response = client.chat.completions.create(
-                            model="gpt-4o-mini",
-                            messages=[
-                                {"role": "system", "content": "あなたは優秀なアシスタントです。"},
-                                {"role": "user", "content": prompt}
-                            ],
-                            timeout=15
-                        )
-                        summary_text = response.choices[0].message.content
-                        is_error = False
-                    except Exception as openai_err:
-                        summary_text = f"要約生成エラー: {openai_err}"
-                        is_error = True
-                else:
-                    summary_text = clean_text[:150] + "..." if len(clean_text) > 150 else clean_text
+                    summary_text = response.choices[0].message.content
+                    is_error = False
+                except Exception as openai_err:
+                    summary_text = f"要約生成エラー: {openai_err}"
+                    is_error = True
             else:
-                is_error = True
+                summary_text = clean_text[:150] + "..." if len(clean_text) > 150 else clean_text
         else:
+            # タグが見つからなかった場合（構造変更、文字なし写真のみ、会員限定など）
+            summary_text = "本文タグが見つかりません。写真のみの記事、またはFC会員限定ページの可能性があります。"
             is_error = True
+            
     except Exception as detail_err:
         summary_text = f"通信エラー: {detail_err}"
         is_error = True
@@ -186,23 +201,49 @@ if st.session_state.authenticated:
     api_key = st.secrets.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         st.warning("⚠️ OPENAI_API_KEY が設定されていないため、簡易サマリーモードで動作します。")
+
+    # --- メンバー絞り込みUI (URLパラメータ連動) ---
+    st.subheader("🔍 メンバーで絞り込む")
+    saved_members = st.query_params.get_all("members")
+    selected_members = st.multiselect(
+        "表示したいメンバーを選択（未選択で全員表示）",
+        options=ALL_MEMBERS,
+        default=saved_members
+    )
+    
+    # URLパラメータの更新
+    if selected_members:
+        st.query_params["members"] = selected_members
+    else:
+        if "members" in st.query_params:
+            del st.query_params["members"]
+    st.write("---")
         
     today_str = datetime.date.today().strftime("%Y.%m.%d")
     
-    # 1. まず一覧だけを爆速で取得（ここは一瞬で終わります）
+    # 1. 一覧取得（爆速・全件取得）
     with st.spinner("ブログの一覧を取得しています..."):
         blog_list = fetch_blog_list(today_str)
         
     if not blog_list:
         st.info(f"対象期間のブログ更新は見つかりませんでした。")
     else:
-        # 2. 取得したリストをループで回し、1件ずつ要約を取得＆表示
-        for post_meta in blog_list:
+        # 絞り込み処理
+        if selected_members:
+            filtered_blog_list = [p for p in blog_list if p['member_name'] in selected_members]
+        else:
+            filtered_blog_list = blog_list
+            
+        if not filtered_blog_list:
+            st.info("選択されたメンバーのブログ更新はありませんでした。")
+        
+        # 2. 取得したリストをループで回し、順次要約・表示
+        for post_meta in filtered_blog_list:
             with st.container():
                 st.markdown(f"### 📝 {post_meta['member_name']} のブログ")
                 st.write(f"**投稿日:** {post_meta['matched_date']}  |  **タイトル:** {post_meta['title']}")
                 
-                # 個別記事の要約を取得（キャッシュがあれば0.1秒、なければ数秒待って即表示）
+                # 個別記事の要約を取得 (順次処理)
                 summary_data = fetch_blog_summary(post_meta['href'], api_key)
                 
                 if summary_data['is_error']:
@@ -212,7 +253,8 @@ if st.session_state.authenticated:
                     
                 st.markdown(f"[👉 このブログを読む]({post_meta['href']})")
                 st.write("---")
-
+    
+    # キャッシュクリアボタン
     if st.button("🔄 最新の情報に更新する"):
-        st.cache_data.clear() # 全てのキャッシュを強制クリア
+        st.cache_data.clear()
         st.rerun()
