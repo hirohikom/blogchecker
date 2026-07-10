@@ -168,9 +168,9 @@ def fetch_blog_summary(href, api_key):
             for element in body_area(["script", "style", "noscript", "header", "footer", "nav", "aside"]):
                 element.decompose()
             
-            # 念のため「JavaScriptが無効」などの定型文も要素ごと削除
-            for noise_text in body_area.find_all(string=re.compile("JavaScript|過去のブログは無料会員")):
-                if noise_text.parent:
+            # # 念のため「JavaScriptが無効」などの定型文も要素ごと削除
+            # for noise_text in body_area.find_all(string=re.compile("JavaScript|過去のブログは無料会員")):
+            #     if noise_text.parent:
             #         noise_text.parent.decompose()
             
             raw_text = body_area.get_text(separator=" ")
