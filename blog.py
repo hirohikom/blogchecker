@@ -124,10 +124,16 @@ def fetch_blog_summary(href, api_key):
         detail_res = requests.get(href, headers=headers, timeout=10)
         if detail_res.status_code == 200:
             detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
-            body_area = detail_soup.find('main') or detail_soup.find('article') or detail_soup.find('body')
+            # 1. まず大本命の本文エリア（div class="txt"）をピンポイントで狙う
+            body_area = detail_soup.find('div', class_='txt')
+            
+            # 2. 万が一サイト構造が変わっていた時の保険として content-main を探す
+            if not body_area:
+                body_area = detail_soup.find('main', class_='content-main')
             
             if body_area:
-                for element in body_area(["script", "style", "header", "footer", "nav"]):
+                # 念のため、JS無効警告などメンバーが絶対に書かないタグだけ除外
+                for element in body_area(["script", "style", "noscript"]):
                     element.decompose()
                 
                 raw_text = body_area.get_text(separator=" ")
