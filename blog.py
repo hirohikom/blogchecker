@@ -163,14 +163,14 @@ def fetch_blog_summary(href, api_key):
                 break # 見つかったらそこで探索終了
                 
         if body_area:
-            # 🌟 bodyまで落ちた時のために、ヘッダー・フッター・ナビゲーション・警告文を確実に消去
-            for element in body_area(["script", "style", "noscript", "header", "footer", "nav", "aside", "form"]):
-                element.decompose()
+            # # 🌟 bodyまで落ちた時のために、ヘッダー・フッター・ナビゲーション・警告文を確実に消去
+            # for element in body_area(["script", "style", "noscript", "header", "footer", "nav", "aside", "form"]):
+            #     element.decompose()
             
-            # 念のため「JavaScriptが無効」などの定型文も要素ごと削除
-            for noise_text in body_area.find_all(string=re.compile("JavaScriptが無効|過去のブログは無料会員")):
-                if noise_text.parent:
-                    noise_text.parent.decompose()
+            # # 念のため「JavaScriptが無効」などの定型文も要素ごと削除
+            # for noise_text in body_area.find_all(string=re.compile("JavaScriptが無効|過去のブログは無料会員")):
+            #     if noise_text.parent:
+            #         noise_text.parent.decompose()
             
             raw_text = body_area.get_text(separator=" ")
             clean_text = re.sub(r'\s+', ' ', raw_text).strip()
