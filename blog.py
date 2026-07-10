@@ -46,7 +46,7 @@ def fetch_blog_list(target_date_str):
     processed_urls = set()
     blog_list = []
     
-    for page in [1, 2]:
+    for page in [1, 2, 3, 4]:
         url = f"{base_url}/blog/list/1/0/" if page == 1 else f"{base_url}/blog/list/1/0/?writer=0&page={page}"
         if page > 1:
             time.sleep(0.5)
