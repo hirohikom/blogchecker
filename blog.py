@@ -143,12 +143,13 @@ def fetch_blog_summary(href, api_key):
             
         detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
         
-        # 本文エリアの探索候補を優先順位順に定義
+       # --- 本文エリアの探索（真の最終手段 body を追加） ---
         candidate_selectors = [
             {'name': 'div', 'class_': 'txt'},                # 第1候補: 大本命（純粋なテキストエリア）
             {'name': 'section', 'class_': 'section-detail'}, # 第2候補: 1つ外側の記事コンテナ
             {'name': 'article', 'class_': None},             # 第3候補: 一般的なarticleタグ
-            {'name': 'main', 'class_': 'content-main'},      # 第4候補: 最終手段（ページ全体のメインコンテンツ）
+            {'name': 'main', 'class_': 'content-main'},      # 第4候補: メインコンテンツ
+            {'name': 'body', 'class_': None},                # 第5候補: 真の最終手段（ページ全体）
         ]
         
         body_area = None
@@ -160,11 +161,16 @@ def fetch_blog_summary(href, api_key):
             
             if body_area:
                 break # 見つかったらそこで探索終了
-            
+                
         if body_area:
-            # 絶対に不要なタグだけ安全に除外
-            for element in body_area(["script", "style", "noscript"]):
+            # 🌟 bodyまで落ちた時のために、ヘッダー・フッター・ナビゲーション・警告文を確実に消去
+            for element in body_area(["script", "style", "noscript", "header", "footer", "nav", "aside", "form"]):
                 element.decompose()
+            
+            # 念のため「JavaScriptが無効」などの定型文も要素ごと削除
+            for noise_text in body_area.find_all(string=re.compile("JavaScriptが無効|過去のブログは無料会員")):
+                if noise_text.parent:
+                    noise_text.parent.decompose()
             
             raw_text = body_area.get_text(separator=" ")
             clean_text = re.sub(r'\s+', ' ', raw_text).strip()
