@@ -222,19 +222,27 @@ if st.session_state.authenticated:
 
     # --- メンバー絞り込みUI (URLパラメータ連動) ---
     st.subheader("🔍 メンバーで絞り込む")
-    saved_members = st.query_params.get_all("members")
+    
+    # 1. 初回のみ、URLパラメータの値をセッションステートに読み込む
+    if "member_filter" not in st.session_state:
+        st.session_state.member_filter = st.query_params.get_all("members")
+
+    # 2. プルダウンの選択が変更された時にURLパラメータを同期するコールバック関数
+    def sync_query_params():
+        selected = st.session_state.member_filter
+        if selected:
+            st.query_params["members"] = selected
+        elif "members" in st.query_params:
+            del st.query_params["members"]
+
+    # 3. keyを指定してセッションステートと完全連動させ、on_changeでURLを更新する
     selected_members = st.multiselect(
         "表示したいメンバーを選択（未選択で全員表示）",
         options=ALL_MEMBERS,
-        default=saved_members
+        key="member_filter",
+        on_change=sync_query_params
     )
     
-    # URLパラメータの更新
-    if selected_members:
-        st.query_params["members"] = selected_members
-    else:
-        if "members" in st.query_params:
-            del st.query_params["members"]
     st.write("---")
         
     today_str = datetime.date.today().strftime("%Y.%m.%d")
