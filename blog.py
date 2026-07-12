@@ -10,7 +10,7 @@ import time
 from openai import OpenAI
 
 st.title("☁️ 僕青 ブログ更新チェッカー (モバイル対応版)")
-st.caption("昨日〜今日にかけて更新されたブログを抽出し、GPT-4o-miniで要約します。")
+st.caption("最新1件のブログを抽出し、GPT-4o-miniで要約します。")
 
 # --- メンバーリスト（絞り込み用） ---
 ALL_MEMBERS = [
@@ -38,6 +38,7 @@ if not st.session_state.authenticated:
 
 # --- 1. ブログの「リスト」だけを取得してキャッシュする関数 ---
 @st.cache_data(ttl=None)
+@st.cache_data(ttl=None)
 def fetch_blog_list(target_date_str):
     today = datetime.datetime.strptime(target_date_str, "%Y.%m.%d").date()
     yesterday = today - datetime.timedelta(days=1)
@@ -52,9 +53,10 @@ def fetch_blog_list(target_date_str):
     session.mount("https://", HTTPAdapter(max_retries=retries))
     
     processed_urls = set()
+    seen_members = set() # 🌟 追加：すでに処理したメンバーを記録するセット
     blog_list = []
     
-    for page in [1, 2, 3, 4]:
+    for page in range(1, 3): # ページ落ち対策で3ページまで探索
         url = f"{base_url}/blog/list/1/0/" if page == 1 else f"{base_url}/blog/list/1/0/?writer=0&page={page}"
         if page > 1:
             time.sleep(0.5)
@@ -107,6 +109,14 @@ def fetch_blog_list(target_date_str):
                 
                 if date_idx != -1:
                     member_name = data_lines[date_idx - 1] if date_idx > 0 else "メンバー不明"
+                    
+                    # 🌟 追加：このメンバーの「最新記事」をすでに拾っている場合はスキップ
+                    if member_name in seen_members:
+                        continue
+                        
+                    # まだ拾っていないメンバーならセットに追加してリストに登録
+                    seen_members.add(member_name)
+                    
                     title = data_lines[date_idx + 1] if date_idx < len(data_lines) - 1 else "（タイトルなし）"
                     
                     blog_list.append({
@@ -143,24 +153,9 @@ def fetch_blog_summary(href, api_key):
             
         detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
         
-       # --- 本文エリアの探索（真の最終手段 body を追加） ---
-        candidate_selectors = [
-            {'name': 'div', 'class_': 'txt'},                # 第1候補: 大本命（純粋なテキストエリア）
-            {'name': 'section', 'class_': 'section-detail'}, # 第2候補: 1つ外側の記事コンテナ
-            {'name': 'article', 'class_': None},             # 第3候補: 一般的なarticleタグ
-            {'name': 'main', 'class_': 'content-main'},      # 第4候補: メインコンテンツ
-            {'name': 'body', 'class_': None},                # 第5候補: 真の最終手段（ページ全体）
-        ]
-        
-        body_area = None
-        for selector in candidate_selectors:
-            if selector['class_']:
-                body_area = detail_soup.find(selector['name'], class_=selector['class_'])
-            else:
-                body_area = detail_soup.find(selector['name'])
-            
-            if body_area:
-                break # 見つかったらそこで探索終了
+        # --- 本文エリアの探索 ---
+        # FC限定記事のスキップ処理により正規のページのみ取得できるため、大本命のタグのみをピンポイントで狙う
+        body_area = detail_soup.find('div', class_='txt')
                 
         if body_area:
             # 🌟 bodyまで落ちた時のために、ヘッダー・フッター・ナビゲーション・警告文を確実に消去
