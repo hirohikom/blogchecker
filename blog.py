@@ -38,7 +38,6 @@ if not st.session_state.authenticated:
 
 # --- 1. ブログの「リスト」だけを取得してキャッシュする関数 ---
 @st.cache_data(ttl=None)
-@st.cache_data(ttl=None)
 def fetch_blog_list(target_date_str):
     today = datetime.datetime.strptime(target_date_str, "%Y.%m.%d").date()
     yesterday = today - datetime.timedelta(days=1)
@@ -108,7 +107,11 @@ def fetch_blog_list(target_date_str):
                         break
                 
                 if date_idx != -1:
-                    member_name = data_lines[date_idx - 1] if date_idx > 0 else "メンバー不明"
+                    # サイトから取得した文字列を一旦変数に入れる
+                    raw_member_name = data_lines[date_idx - 1] if date_idx > 0 else "メンバー不明"
+                    
+                    # 🌟 修正：姓名の間にある全角・半角スペースをすべて削除して「ALL_MEMBERS」の表記と合わせる
+                    member_name = re.sub(r'[\s ]+', '', raw_member_name)
                     
                     # 🌟 追加：このメンバーの「最新記事」をすでに拾っている場合はスキップ
                     if member_name in seen_members:
